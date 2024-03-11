@@ -178,6 +178,37 @@ Computes the equation of motion for the N-body problem.
 - `nbp`: NBodyProblem definition
 - `kwargs`: Keyword arguments.
 """
+
+function condition2(x, t, integrator) # Event when event_f(u,t) == 0
+
+    r_rel_all = [3,3]
+    i = 0
+
+    # Calculate Gravitational Acceleration
+    for id in p.list_bodies
+        # Get planetary ephemeris
+        x_body, _ = SPICE.spkez(id, t * p.tsf, p.ref_frame, "NONE", p.id_center)
+        r_body = x_body[1:3] / p.lsf
+    
+        # Acceleration due to the body id
+        r_rel = x[1:3] - r_body
+        r_rel_all[:,i] = r_rel
+        i += 1
+
+    end
+
+    r1 = r_rel_all[:,1]
+    r2 = r_rel_all[:,2]
+    r3 = r_rel_all[:,3]
+
+    return norm(r1) > 1.0e-3 && norm(r2) > 1.0e-3 && norm(r3) > 1.0e-3
+end
+
+affect2!(integrator) = terminate!(integrator)
+
+cb2 = ContinuousCallback(condition2, affect2!, save_positions=(false, false))
+
+
 function propagate(nbp::NBodyProblem; kwargs...)
     # Merge keyword argments
     defaults = (;
@@ -195,7 +226,7 @@ function propagate(nbp::NBodyProblem; kwargs...)
 
         # Define and solve of ODEProblem
         prob = ODEProblem(eom_nbp!, x0_, tspan_, merge((; list_bodies=nbp.list_bodies, ssd=nbp.ssd), nbp.kwargs))
-        sol_ = solve(prob, Vern7(); kwargs_...)
+        sol_ = solve(prob, Vern7(), ; kwargs_...)
 
         # Postprocess (Unscaling)
         t_all = sol_.t
@@ -219,7 +250,7 @@ function propagate(nbp::NBodyProblem; kwargs...)
 
         ## Define and solve of ODEProblem
         prob = ODEProblem(eom_nbp_with_stm!, x0_, tspan_, merge((; list_bodies=nbp.list_bodies, ssd=nbp.ssd), nbp.kwargs))
-        sol_ = solve(prob, Vern7(); kwargs_...)
+        sol_ = solve(prob, Vern7(), callback=cb2; kwargs_...)
 
         ## Postprocess (Reshape STMs and unscaling)
         t_all = sol_.t
